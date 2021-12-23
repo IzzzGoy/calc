@@ -1,0 +1,126 @@
+
+
+
+┌─ process timing ─────────────────────────────────────┬─ overall results ─────┐
+│        run time : 0 days, 0 hrs, 1 min, 39 sec       │  cycles done : 2      │
+│   last new path : 0 days, 0 hrs, 0 min, 6 sec        │  total paths : 195    │
+│ last uniq crash : 0 days, 0 hrs, 0 min, 5 sec        │ uniq crashes : 30     │
+│  last uniq hang : 0 days, 0 hrs, 0 min, 6 sec        │   uniq hangs : 1      │
+├─ cycle progress ────────────────────┬─ map coverage ─┴───────────────────────┤
+│  now processing : 44* (22.56%)      │    map density : 0.12% / 0.28%         │
+│ paths timed out : 0 (0.00%)         │ count coverage : 5.42 bits/tuple       │
+├─ stage progress ────────────────────┼─ findings in depth ────────────────────┤
+│  now trying : interest 16/8         │ favored paths : 15 (7.69%)             │
+│ stage execs : 528/1100 (48.00%)     │  new edges on : 37 (18.97%)            │
+│ total execs : 645k                  │ total crashes : 14.9k (30 unique)      │
+│  exec speed : 6616/sec              │  total tmouts : 1 (1 unique)           │
+├─ fuzzing strategy yields ───────────┴───────────────┬─ path geometry ────────┤
+│   bit flips : 18/16.6k, 10/16.5k, 4/16.4k           │    levels : 6          │
+│  byte flips : 0/2074, 2/2000, 2/1855                │   pending : 122        │
+│ arithmetics : 19/115k, 0/9407, 0/1335               │  pend fav : 0          │
+│  known ints : 5/12.1k, 0/53.6k, 0/79.6k             │ own finds : 194        │
+│  dictionary : 0/0, 0/0, 0/4452                      │  imported : n/a        │
+│       havoc : 164/311k, 0/0                         │ stability : 100.00%    │
+│        trim : 16.79%/650, 0.00%                     ├────────────────────────┘
+^C────────────────────────────────────────────────────┘          [cpu000: 47%]
+
+Первичное состояние калькулятора. Файлы ошибок преведены в архиве calc/findings_dir/calc_start.tar
+После анализа ошибок был сделан вывод о том, что большая часть ошибок вызвана уязвимостью при обработке закрывающей скобки при отсутстыии открывающей.
+
+Код исправления:
+
+if (currentScope->parent == NULL || !currentScope->first || !strcmp (currentScope->first->type, OP)){
+	exit(1);
+}
+
+Собственно
+1 условие: если текущая область видимости не является глобальной (само выражение), но мы ловим закрытие области видимости (скобок).
+2-е: Если текущая область видимости не начинается с токена начала области видимости.
+3-е: Если каким-то образом (перезапись через переполнение стека, например) меняем тип токена начала области видимости на другие 4 байта (длинна строчки с типом).
+
+┌─ process timing ─────────────────────────────────────┬─ overall results ─────┐
+│        run time : 0 days, 0 hrs, 10 min, 6 sec       │  cycles done : 19.5k  │
+│   last new path : none yet (odd, check syntax!)      │  total paths : 1      │
+│ last uniq crash : 0 days, 0 hrs, 0 min, 6 sec        │ uniq crashes : 2      │
+│  last uniq hang : none seen yet                      │   uniq hangs : 0      │
+├─ cycle progress ────────────────────┬─ map coverage ─┴───────────────────────┤
+│  now processing : 0 (0.00%)         │    map density : 0.01% / 0.01%         │
+│ paths timed out : 0 (0.00%)         │ count coverage : 1.00 bits/tuple       │
+├─ stage progress ────────────────────┼─ findings in depth ────────────────────┤
+│  now trying : havoc                 │ favored paths : 1 (100.00%)            │
+│ stage execs : 146/256 (57.03%)      │  new edges on : 1 (100.00%)            │
+│ total execs : 5.00M                 │ total crashes : 273k (2 unique)        │
+│  exec speed : 7360/sec              │  total tmouts : 0 (0 unique)           │
+├─ fuzzing strategy yields ───────────┴───────────────┬─ path geometry ────────┤
+│   bit flips : 0/32, 0/31, 0/29                      │    levels : 1          │
+│  byte flips : 0/4, 0/3, 0/1                         │   pending : 0          │
+│ arithmetics : 0/224, 0/0, 0/0                       │  pend fav : 0          │
+│  known ints : 0/25, 0/84, 0/44                      │ own finds : 0          │
+│  dictionary : 0/0, 0/0, 0/0                         │  imported : n/a        │
+│       havoc : 2/5.00M, 0/0                          │ stability : 100.00%    │
+│        trim : 20.00%/1, 0.00%                       ├────────────────────────┘
+^C────────────────────────────────────────────────────┘          [cpu000: 86%]
+
+Состояние калькулятора на момент исправления ошибок со скобками. Файлы ошибок преведены в архиве calc/findings_dir/brackets_fix.tar
+Следующая ошибка к исправлению - в первом файле с отчётом. 
+
+Ошибка возникает при вводе: ÿ23+345
+
+Очевидно, программа не переваривает символы, не являющиеся числами или знаками из диапазона знаков арифметических операций.
+
+
+Так же из следующей ошибки видно, что программа не может корректно обработать пустую строку.
+
+Решения проблем:
+
+с незадекларированными символами:
+
+switch (operator) {
+		case 'x':
+		case '*':
+			return '*';
+            	case '\'':
+            	case '^':
+            	        return '^';
+            	case '+':
+            	case '-':
+            	case '/':
+               	 return operator;
+            	default:
+                	exit(1);
+	}
+	Теперь в случае непредвиденного символа програма завершает свою работу штатно.
+	
+С пустой строкой:
+
+if(!str) {
+		exit(1);
+	}
+	Программа просто завершится в случае с пустой строкой.
+	
+Итог:
+┌─ process timing ─────────────────────────────────────┬─ overall results ─────┐
+│        run time : 0 days, 0 hrs, 7 min, 34 sec       │  cycles done : 30     │
+│   last new path : 0 days, 0 hrs, 0 min, 2 sec        │  total paths : 227    │
+│ last uniq crash : none seen yet                      │ uniq crashes : 0      │
+│  last uniq hang : none seen yet                      │   uniq hangs : 0      │
+├─ cycle progress ────────────────────┬─ map coverage ─┴───────────────────────┤
+│  now processing : 225* (99.12%)     │    map density : 0.14% / 0.31%         │
+│ paths timed out : 0 (0.00%)         │ count coverage : 5.26 bits/tuple       │
+├─ stage progress ────────────────────┼─ findings in depth ────────────────────┤
+│  now trying : havoc                 │ favored paths : 32 (14.10%)            │
+│ stage execs : 11.5k/12.3k (93.78%)  │  new edges on : 45 (19.82%)            │
+│ total execs : 3.07M                 │ total crashes : 0 (0 unique)           │
+│  exec speed : 6705/sec              │  total tmouts : 0 (0 unique)           │
+├─ fuzzing strategy yields ───────────┴───────────────┬─ path geometry ────────┤
+│   bit flips : 18/50.4k, 11/50.2k, 5/49.8k           │    levels : 9          │
+│  byte flips : 0/6303, 0/5917, 0/5483                │   pending : 4          │
+│ arithmetics : 24/341k, 0/22.2k, 0/2159              │  pend fav : 0          │
+│  known ints : 5/36.1k, 0/163k, 0/240k               │ own finds : 226        │
+│  dictionary : 0/0, 0/0, 0/9171                      │  imported : n/a        │
+│       havoc : 159/1.56M, 4/520k                     │ stability : 100.00%    │
+│        trim : 11.88%/1952, 2.46%                    ├────────────────────────┘
+^C────────────────────────────────────────────────────┘          [cpu000: 48%]
+
+
+
